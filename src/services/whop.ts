@@ -218,12 +218,14 @@ export class WhopAutomator {
     }
 
     // --- Name / display name ---
+    // Use fill() which properly fires React's onChange/onInput events (unlike clear + pressSequentially)
     const nameInput = page.locator(
       'input[name="name"], input[name="displayName"], input[name="display_name"], input[placeholder*="name" i]:not([name="username"]):not([placeholder*="user" i])',
     ).first();
     if (await nameInput.isVisible().catch(() => false)) {
-      await nameInput.clear();
-      await humanType(nameInput, profile.displayName);
+      await nameInput.click();
+      await page.waitForTimeout(200);
+      await nameInput.fill(profile.displayName);
       logger.info(`Set name: ${profile.displayName}`);
       await humanPause();
     }
@@ -233,66 +235,85 @@ export class WhopAutomator {
       'input[name="username"], input[placeholder*="username" i]',
     ).first();
     if (await usernameInput.isVisible().catch(() => false)) {
-      await usernameInput.clear();
-      await humanType(usernameInput, profile.username);
+      await usernameInput.click();
+      await page.waitForTimeout(200);
+      await usernameInput.fill(profile.username);
       logger.info(`Set username: @${profile.username}`);
       await humanPause();
     }
 
-    // --- Save changes (main profile form) ---
-    // Blur any focused input so the form sees the updated name/username
-    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-    await page.waitForTimeout(500);
+    // Trigger React change detection: blur the active input, then dispatch input events via JS
+    await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement | null;
+      active?.blur();
+      document.querySelectorAll<HTMLInputElement>('input[name="name"], input[name="username"]').forEach((el) => {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
+    await page.waitForTimeout(1000);
 
     await this.clickSaveChanges(page);
     logger.info("Profile update complete");
   }
 
   /**
-   * Click the main "Save changes" button on the profile page.
-   * Tries multiple selectors and a JS fallback so the click always fires.
+   * Click the "Save changes" button. Waits for it to become enabled (the form
+   * disables it until it detects changes), then clicks it via multiple strategies.
    */
   private async clickSaveChanges(page: Page): Promise<void> {
-    const selectors = [
-      'button:has-text("Save changes")',
-      'button.fui-Button:has-text("Save changes")',
-      'button[data-accent-color="blue"]:has-text("Save changes")',
-      'button[type="button"]:has-text("Save changes")',
-    ];
+    const saveBtn = page.getByRole("button", { name: "Save changes" });
 
-    for (const selector of selectors) {
-      const btn = page.locator(selector).first();
-      try {
-        await btn.waitFor({ state: "visible", timeout: 3000 });
-        if (await btn.isDisabled().catch(() => false)) {
-          await page.waitForTimeout(1000);
-        }
-        await btn.scrollIntoViewIfNeeded();
-        await page.waitForTimeout(200);
-        await btn.click({ force: true });
-        logger.info("Clicked Save changes — profile saved");
-        await stepPause();
-        return;
-      } catch {
-        continue;
-      }
+    // Wait for the button to appear
+    try {
+      await saveBtn.waitFor({ state: "visible", timeout: 5000 });
+    } catch {
+      logger.warn("Save changes button never became visible");
+      return;
     }
 
-    // Fallback: trigger click via JavaScript (bypasses overlay/visibility issues)
+    // Wait up to 5s for it to become enabled (the form enables it once it detects dirty fields)
+    for (let i = 0; i < 10; i++) {
+      if (!(await saveBtn.isDisabled().catch(() => true))) break;
+      await page.waitForTimeout(500);
+    }
+
+    // Strategy 1: normal Playwright click
+    try {
+      await saveBtn.scrollIntoViewIfNeeded();
+      await saveBtn.click({ timeout: 3000 });
+      logger.info("Clicked Save changes");
+      await stepPause();
+      return;
+    } catch {
+      logger.debug("Normal click failed, trying force click");
+    }
+
+    // Strategy 2: force click (ignores actionability checks)
+    try {
+      await saveBtn.click({ force: true, timeout: 3000 });
+      logger.info("Clicked Save changes (force)");
+      await stepPause();
+      return;
+    } catch {
+      logger.debug("Force click failed, trying JS dispatch");
+    }
+
+    // Strategy 3: JS — find the button, remove disabled if present, dispatch a real click event
     const clicked = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
-      const saveBtn = buttons.find((b) => b.textContent?.trim() === "Save changes");
-      if (saveBtn) {
-        saveBtn.click();
-        return true;
-      }
-      return false;
+      const btn = buttons.find((b) => b.textContent?.trim() === "Save changes");
+      if (!btn) return false;
+      btn.removeAttribute("disabled");
+      btn.click();
+      btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      return true;
     });
     if (clicked) {
-      logger.info("Clicked Save changes (JS fallback) — profile saved");
+      logger.info("Clicked Save changes (JS dispatch)");
       await stepPause();
     } else {
-      logger.warn("Save changes button not found");
+      logger.warn("Save changes button not found in DOM");
     }
   }
 
@@ -365,6 +386,79 @@ export class WhopAutomator {
     } else {
       logger.warn("No join button found — page may need manual interaction or bot is already a member");
     }
+  }
+
+  /**
+   * Navigate to the product page URL and click the Join button.
+   */
+  async joinProduct(page: Page, productUrl: string): Promise<boolean> {
+    logger.info(`Navigating to product: ${productUrl}`);
+    await page.goto(productUrl, { waitUntil: "networkidle", timeout: 30000 });
+    await stepPause();
+    await this.dismissPopups(page);
+
+    const joinBtn = page.locator(
+      'button:has-text("Join"), button:has-text("Join for free"), a:has-text("Join"), a:has-text("Join for free")',
+    ).first();
+
+    if (await joinBtn.isVisible().catch(() => false)) {
+      await joinBtn.scrollIntoViewIfNeeded().catch(() => {});
+      await joinBtn.click();
+      logger.info("Clicked product Join button");
+      await stepPause();
+
+      const confirmBtn = page.locator(
+        'button:has-text("Join"), button:has-text("Confirm"), button:has-text("Continue"), button:has-text("Get Access")',
+      ).first();
+      if (await confirmBtn.isVisible().catch(() => false)) {
+        await confirmBtn.click();
+        await stepPause();
+      }
+
+      await this.dismissPopups(page);
+      logger.info("Joined product successfully");
+      return true;
+    }
+
+    logger.warn("No Join button found on the product page");
+    return false;
+  }
+
+  /**
+   * Navigate to the community home and like the top comment/post.
+   * Whop shows "Like" / "Liked" in a span with class fui-Text; we click the button that says "Like".
+   */
+  async likeTopComment(page: Page, communityUrl: string): Promise<boolean> {
+    logger.info("Navigating to community home to like top comment...");
+    await page.goto(communityUrl, { waitUntil: "networkidle", timeout: 30000 });
+    await stepPause();
+    await this.dismissPopups(page);
+
+    // Whop: like button contains <span class="fui-Text ...">Like</span> (or "Liked" after click). Click the one that says "Like".
+    const likeBtn = page.locator('button').filter({
+      has: page.locator('span.fui-Text').filter({ hasText: /^Like$/ }),
+    }).first();
+
+    if (await likeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await likeBtn.scrollIntoViewIfNeeded().catch(() => {});
+      await likeBtn.click();
+      logger.info("Liked top comment (fui-Text Like button)");
+      await humanPause();
+      return true;
+    }
+
+    // Fallback: role button with name "Like" (exact)
+    const likeByRole = page.getByRole("button", { name: "Like" }).first();
+    if (await likeByRole.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await likeByRole.scrollIntoViewIfNeeded().catch(() => {});
+      await likeByRole.click();
+      logger.info("Liked top comment (getByRole)");
+      await humanPause();
+      return true;
+    }
+
+    logger.warn("Could not find a like button on the community page");
+    return false;
   }
 
   async close(): Promise<void> {

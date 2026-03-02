@@ -11,6 +11,8 @@ export interface GmailCredentials {
 
 export interface AppConfig {
   communityUrl: string;
+  /** Optional product page URL (e.g. https://whop.com/joined/realapextrading/products/apex-beginner/) to join after the community. */
+  productUrl?: string;
   count: number;
   concurrency: number;
   delayBetweenBotsMs: number;

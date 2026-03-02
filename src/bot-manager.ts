@@ -41,6 +41,14 @@ export class BotManager {
 
     try {
       for (let i = 0; i < this.config.count; i++) {
+        // Restart browser every 3 bots to avoid memory buildup and rate limiting
+        if (i > 0 && i % 3 === 0) {
+          logger.info("Restarting browser (every 3 bots) to stay stable...");
+          await this.automator.close();
+          await sleep(3000);
+          await this.automator.launch();
+        }
+
         console.log(`\n${"=".repeat(50)}`);
         console.log(`  Bot ${i + 1} of ${this.config.count}`);
         console.log(`${"=".repeat(50)}`);
@@ -57,6 +65,12 @@ export class BotManager {
           logger.info("Waiting before next bot...");
           await sleep(this.config.delayBetweenBotsMs);
           await botGapPause();
+          // Extra cooldown after every 3 bots to reduce rate limiting
+          if ((i + 1) % 3 === 0) {
+            const extraMs = 30_000 + Math.floor(Math.random() * 30_000);
+            logger.info(`Extended cooldown (${Math.round(extraMs / 1000)}s) after batch of 3...`);
+            await sleep(extraMs);
+          }
         }
       }
     } finally {
@@ -147,6 +161,16 @@ export class BotManager {
       if (this.config.communityUrl) {
         await this.automator.joinCommunity(page, this.config.communityUrl);
         this.storage.updateStatus(botId, "joined");
+
+        // 6. 70% chance: like the top comment on the community home first (more efficient)
+        if (Math.random() < 0.7) {
+          await this.automator.likeTopComment(page, this.config.communityUrl);
+        }
+
+        // 7. Then go to the product page and join (if product URL is set)
+        if (this.config.productUrl) {
+          await this.automator.joinProduct(page, this.config.productUrl);
+        }
       }
 
       console.log(`  Bot ${botId} completed successfully!\n`);
@@ -257,6 +281,14 @@ export class BotManager {
       if (bot.communityUrl) {
         await this.automator.joinCommunity(page, bot.communityUrl);
         this.storage.updateStatus(botId, "joined");
+
+        if (Math.random() < 0.7) {
+          await this.automator.likeTopComment(page, bot.communityUrl);
+        }
+
+        if (this.config.productUrl) {
+          await this.automator.joinProduct(page, this.config.productUrl);
+        }
       }
 
       console.log(`  Bot ${botId} retry succeeded!\n`);

@@ -119,7 +119,7 @@ export function generateProfile(): BotProfile {
     randomInt(10, 99) +
     "!";
 
-  const hasProfilePicture = randomChance(70);
+  const hasProfilePicture = randomChance(20);
 
   logger.debug(`Generated profile: ${displayName} (@${username}) pic=${hasProfilePicture}`);
   return {
@@ -141,7 +141,7 @@ export async function downloadProfilePicture(
   tempDir: string,
   type?: "person" | "avatar",
 ): Promise<string | null> {
-  const usePerson = type ?? (randomChance(60) ? "person" : "avatar");
+  const usePerson = type ?? (randomChance(20) ? "person" : "avatar");
 
   fs.mkdirSync(tempDir, { recursive: true });
   const ext = usePerson === "person" ? "jpg" : "png";

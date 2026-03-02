@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Run with:
+// npx tsx src/index.ts create -n {num bots}
+// add --no-headless to run in visible mode
 
 import "dotenv/config";
 import { Command } from "commander";
@@ -21,6 +24,7 @@ program
   .command("create")
   .description("Create bot accounts and join a Whop community")
   .option("-c, --community <url>", "Whop community URL to join")
+  .option("-P, --product <url>", "Whop product page URL to join (e.g. https://whop.com/joined/realapextrading/products/apex-beginner/)")
   .option("-g, --gmail <address>", "Gmail address (e.g. johnsmith@gmail.com)")
   .option("-p, --gmail-password <password>", "Gmail App Password (for auto 2FA; else you type the code)")
   .option("-n, --count <number>", "Number of bots to create", "1")
@@ -30,6 +34,7 @@ program
     const gmail = opts.gmail || env("GOOGLE_EMAIL");
     const appPassword = (opts.gmailPassword ?? env("GOOGLE_APP_PASSWORD")).replace(/\s/g, "") || undefined;
     const community = opts.community || env("WHOP_COMMUNITY_URL");
+    const productUrl = opts.product || env("WHOP_PRODUCT_URL") || undefined;
 
     if (!gmail || !community) {
       console.error("Error: Missing required values. Provide via CLI flags or .env file:");
@@ -51,6 +56,7 @@ program
     const config: AppConfig = {
       ...defaultConfig,
       communityUrl: community,
+      productUrl,
       count,
       concurrency: 1,
       delayBetweenBotsMs: parseInt(opts.delay, 10),
@@ -79,6 +85,7 @@ program
   .command("retry-failed")
   .description("Retry all previously failed bot creations")
   .option("-c, --community <url>", "Whop community URL to join")
+  .option("-P, --product <url>", "Whop product page URL to join")
   .option("-g, --gmail <address>", "Gmail address")
   .option("-p, --gmail-password <password>", "Gmail App Password (for auto 2FA)")
   .option("--delay <ms>", "Delay between retries in milliseconds", "10000")
@@ -87,6 +94,7 @@ program
     const gmail = opts.gmail || env("GOOGLE_EMAIL");
     const appPassword = (opts.gmailPassword ?? env("GOOGLE_APP_PASSWORD")).replace(/\s/g, "") || undefined;
     const community = opts.community || env("WHOP_COMMUNITY_URL");
+    const productUrl = opts.product || env("WHOP_PRODUCT_URL") || undefined;
 
     if (!gmail || !community) {
       console.error("Error: Missing required values. Provide via CLI flags or .env file:");
@@ -98,6 +106,7 @@ program
     const config: AppConfig = {
       ...defaultConfig,
       communityUrl: community,
+      productUrl,
       count: 0,
       delayBetweenBotsMs: parseInt(opts.delay, 10),
       headless: opts.headless !== false,
