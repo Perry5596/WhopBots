@@ -1,7 +1,8 @@
 import { logger } from "./utils/logger.js";
 import { botGapPause, sleep } from "./utils/delay.js";
 import { prompt } from "./utils/prompt.js";
-import { generateDotVariations } from "./services/email.js";
+import { withRetry } from "./utils/retry.js";
+import { generateDotVariations, waitForVerificationCode } from "./services/email.js";
 import { generateProfile, downloadProfilePicture } from "./services/profile.js";
 import { BotStorage } from "./services/storage.js";
 import { WhopAutomator } from "./services/whop.js";
@@ -91,20 +92,51 @@ export class BotManager {
 
     const context = await this.automator.newContext();
     try {
-      // 1. Submit email on Whop login page
+      // 1. Submit email on Whop login page and record time for "email after this"
       const page = await this.automator.submitEmail(context, email);
+      const signupTime = Date.now();
       this.storage.updateStatus(botId, "created");
 
-      // 2. Ask the user to enter the code from their email
-      console.log("");
-      const code = await prompt("  Enter the 6-digit sign-in code from your email: ");
+      // 2. Get 6-digit code: auto from Gmail (if app password set) or manual prompt, with fallback
+      let code: string;
+      const gmailWithPassword = this.config.gmail.address && this.config.gmail.appPassword
+        ? { address: this.config.gmail.address, appPassword: this.config.gmail.appPassword }
+        : null;
 
-      if (!/^\d{6}$/.test(code)) {
-        throw new Error(`Invalid code "${code}" — must be exactly 6 digits`);
+      const getCode = async (): Promise<string> => {
+        if (gmailWithPassword) {
+          try {
+            return await withRetry(
+              () => waitForVerificationCode(gmailWithPassword, email, signupTime, 90_000),
+              { label: "wait-for-2fa-code", maxAttempts: 2, baseDelayMs: 3000 },
+            );
+          } catch (err) {
+            logger.warn(`Auto 2FA failed (${err}), falling back to manual entry`);
+          }
+        }
+        console.log("");
+        const manual = await prompt("  Enter the 6-digit sign-in code from your email: ");
+        if (!/^\d{6}$/.test(manual)) {
+          throw new Error(`Invalid code "${manual}" — must be exactly 6 digits`);
+        }
+        return manual;
+      };
+
+      code = await getCode();
+
+      // 3. Enter the code on the page; if it fails and we have auto 2FA, try once more with a fresh code
+      try {
+        await this.automator.enterVerificationCode(page, code);
+      } catch (enterErr) {
+        if (gmailWithPassword) {
+          logger.warn("Code entry failed, fetching a fresh code and retrying...");
+          code = await waitForVerificationCode(gmailWithPassword, email, signupTime, 30_000);
+          await this.automator.enterVerificationCode(page, code);
+        } else {
+          throw enterErr;
+        }
       }
 
-      // 3. Enter the code on the page
-      await this.automator.enterVerificationCode(page, code);
       this.storage.updateStatus(botId, "verified");
 
       // 4. Navigate to profile settings and update name/username/picture
@@ -182,14 +214,41 @@ export class BotManager {
 
     try {
       const page = await this.automator.submitEmail(context, bot.email);
+      const signupTime = Date.now();
       this.storage.updateStatus(botId, "created");
 
-      const code = await prompt("  Enter the 6-digit sign-in code from your email: ");
-      if (!/^\d{6}$/.test(code)) {
-        throw new Error(`Invalid code "${code}" — must be exactly 6 digits`);
+      const gmailWithPassword = this.config.gmail.appPassword
+        ? { address: this.config.gmail.address, appPassword: this.config.gmail.appPassword }
+        : null;
+
+      let code: string;
+      if (gmailWithPassword) {
+        try {
+          code = await waitForVerificationCode(gmailWithPassword, bot.email, signupTime, 90_000);
+        } catch (err) {
+          logger.warn(`Auto 2FA failed (${err}), falling back to manual entry`);
+          const manual = await prompt("  Enter the 6-digit sign-in code from your email: ");
+          if (!/^\d{6}$/.test(manual)) throw new Error(`Invalid code — must be exactly 6 digits`);
+          code = manual;
+        }
+      } else {
+        const manual = await prompt("  Enter the 6-digit sign-in code from your email: ");
+        if (!/^\d{6}$/.test(manual)) throw new Error(`Invalid code — must be exactly 6 digits`);
+        code = manual;
       }
 
-      await this.automator.enterVerificationCode(page, code);
+      try {
+        await this.automator.enterVerificationCode(page, code);
+      } catch (enterErr) {
+        if (gmailWithPassword) {
+          logger.warn("Fetching a fresh code and retrying...");
+          code = await waitForVerificationCode(gmailWithPassword, bot.email, signupTime, 30_000);
+          await this.automator.enterVerificationCode(page, code);
+        } else {
+          throw enterErr;
+        }
+      }
+
       this.storage.updateStatus(botId, "verified");
 
       await this.automator.updateProfile(page, profile, picturePath);

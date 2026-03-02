@@ -53,15 +53,59 @@ function generateDisplayName(): { displayName: string; firstName: string; lastNa
   return { displayName, firstName: displayName, lastName: "" };
 }
 
+/**
+ * Generate a varied username from first/last name so they don't all look the same.
+ * - With last name: full name, first+lastInitial, firstInitial+last, or numbers in middle.
+ * - Without last name: short/long suffix, or numbers in the middle of the name.
+ */
+function generateUsername(firstName: string, lastName: string): string {
+  const first = firstName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  const last = lastName.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  const firstInit = first.slice(0, 1);
+  const lastInit = last.slice(0, 1);
+
+  const digitSuffix = (minLen: number, maxLen: number) => {
+    const len = randomInt(minLen, maxLen);
+    const max = Math.pow(10, len) - 1;
+    const min = Math.pow(10, len - 1);
+    return String(randomInt(min, max));
+  };
+
+  const insertNumbersInMiddle = (base: string, numDigits: number): string => {
+    if (base.length <= 2) return base + digitSuffix(numDigits, numDigits);
+    const pos = randomInt(1, base.length - 1);
+    const num = digitSuffix(numDigits, numDigits);
+    return base.slice(0, pos) + num + base.slice(pos);
+  };
+
+  if (last) {
+    const styles = [
+      () => `${first}${last}${digitSuffix(4, 6)}`,
+      () => `${first}${lastInit}${digitSuffix(4, 6)}`,
+      () => `${firstInit}${last}${digitSuffix(4, 6)}`,
+      () => `${first}${digitSuffix(2, 4)}${last}`,
+      () => `${first}_${last}${digitSuffix(2, 4)}`,
+      () => `${first}${last}${digitSuffix(2, 3)}`,
+    ];
+    return styles[randomInt(0, styles.length - 1)]();
+  }
+
+  // No last name: first name only — vary suffix length or put numbers in middle
+  const noLastStyles = [
+    () => `${first}${digitSuffix(2, 4)}`,
+    () => `${first}${digitSuffix(4, 6)}`,
+    () => insertNumbersInMiddle(first, 2),
+    () => insertNumbersInMiddle(first, 3),
+    () => `${first}_${digitSuffix(3, 5)}`,
+    () => `${first.slice(0, 2)}${digitSuffix(2, 3)}${first.slice(2)}`,
+  ];
+  return noLastStyles[randomInt(0, noLastStyles.length - 1)]();
+}
+
 export function generateProfile(): BotProfile {
   const { displayName, firstName, lastName } = generateDisplayName();
 
-  const usernameBase =
-    lastName
-      ? `${firstName}${lastName}`.replace(/[^a-zA-Z]/g, "").toLowerCase()
-      : `${firstName}`.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-  const suffix = randomInt(1000, 999999);
-  const username = `${usernameBase}${suffix}`;
+  const username = generateUsername(firstName, lastName);
 
   const age = randomInt(18, 45);
   const now = new Date();

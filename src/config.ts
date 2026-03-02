@@ -5,6 +5,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface GmailCredentials {
   address: string;
+  /** When set, 2FA code is read from Gmail via IMAP; otherwise user enters it manually. */
+  appPassword?: string;
 }
 
 export interface AppConfig {

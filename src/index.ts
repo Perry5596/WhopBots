@@ -22,11 +22,13 @@ program
   .description("Create bot accounts and join a Whop community")
   .option("-c, --community <url>", "Whop community URL to join")
   .option("-g, --gmail <address>", "Gmail address (e.g. johnsmith@gmail.com)")
+  .option("-p, --gmail-password <password>", "Gmail App Password (for auto 2FA; else you type the code)")
   .option("-n, --count <number>", "Number of bots to create", "1")
   .option("--delay <ms>", "Delay between bots in milliseconds", "10000")
   .option("--no-headless", "Run browser in visible mode (for debugging)")
   .action(async (opts) => {
     const gmail = opts.gmail || env("GOOGLE_EMAIL");
+    const appPassword = (opts.gmailPassword ?? env("GOOGLE_APP_PASSWORD")).replace(/\s/g, "") || undefined;
     const community = opts.community || env("WHOP_COMMUNITY_URL");
 
     if (!gmail || !community) {
@@ -53,7 +55,7 @@ program
       concurrency: 1,
       delayBetweenBotsMs: parseInt(opts.delay, 10),
       headless: opts.headless !== false,
-      gmail: { address: gmail },
+      gmail: { address: gmail, appPassword },
     };
 
     const manager = new BotManager(config);
@@ -78,10 +80,12 @@ program
   .description("Retry all previously failed bot creations")
   .option("-c, --community <url>", "Whop community URL to join")
   .option("-g, --gmail <address>", "Gmail address")
+  .option("-p, --gmail-password <password>", "Gmail App Password (for auto 2FA)")
   .option("--delay <ms>", "Delay between retries in milliseconds", "10000")
   .option("--no-headless", "Run browser in visible mode")
   .action(async (opts) => {
     const gmail = opts.gmail || env("GOOGLE_EMAIL");
+    const appPassword = (opts.gmailPassword ?? env("GOOGLE_APP_PASSWORD")).replace(/\s/g, "") || undefined;
     const community = opts.community || env("WHOP_COMMUNITY_URL");
 
     if (!gmail || !community) {
@@ -97,7 +101,7 @@ program
       count: 0,
       delayBetweenBotsMs: parseInt(opts.delay, 10),
       headless: opts.headless !== false,
-      gmail: { address: gmail },
+      gmail: { address: gmail, appPassword },
     };
 
     const manager = new BotManager(config);
