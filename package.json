@@ -1,0 +1,33 @@
+{
+  "name": "whop-bots",
+  "version": "1.0.0",
+  "description": "Automated Whop bot account creator with browser automation",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "whopbots": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.0.0",
+    "better-sqlite3": "^11.0.0",
+    "cheerio": "^1.0.0",
+    "commander": "^12.0.0",
+    "dotenv": "^17.3.1",
+    "imapflow": "^1.2.10",
+    "playwright": "^1.49.0",
+    "playwright-extra": "^4.3.0",
+    "puppeteer-extra-plugin-stealth": "^2.11.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
